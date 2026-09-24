@@ -1,0 +1,21 @@
+[project]
+name = "ai-engineering-buildcamp-codespaces"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "REZZOUGAICHA", email = "109626759+REZZOUGAICHA@users.noreply.github.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "groq>=1.7.0",
+    "jupyter>=1.1.1",
+    "openai>=3.19.2",
+]
+
+[project.scripts]
+ai-engineering-buildcamp-codespaces = "ai_engineering_buildcamp_codespaces:main"
+
+[build-system]
+requires = ["uv_build>=0.12.18,<0.13.0"]
+build-backend = "uv_build"
