@@ -5,3 +5,6 @@
 __pycache__/
 *.pyc
 .venv/
+
+# homework pdfs, re-download with homework1/download_books.py
+homework1/books/
