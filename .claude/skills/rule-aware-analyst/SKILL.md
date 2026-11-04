@@ -130,6 +130,18 @@ phase's "done when" list is true **and verified by actually running it**.
 At the end of each phase, give a short recap: what was built, what was tested,
 the numbers from the test run, and what comes next.
 
+Then add that phase's section to `analyst/NOTES_FOR_ME.md`, Aicha's private
+learning notes (git-ignored, never committed). Write it in very easy English
+and explain every technical word: what we built and why, the main ideas, what
+went wrong and how we found it, the lessons, the interview questions with
+answers, and new words for the glossary. Use real numbers from the run only.
+Read the file first and add to it; never rewrite earlier phases.
+
+The file also has an "Interview question bank" near the top. Every interview
+question you mention to Aicha, in any phase or in chat, goes there too, with a
+simple answer she can say out loud, under the right topic. Do this at the end
+of each phase and whenever a new question comes up between phases.
+
 ### Scope: minimum version vs. stretch
 
 | Part | Phases | Status |
