@@ -29,11 +29,11 @@ DATA_AS_OF = date(2026, 8, 31)
 # --- Background: a smooth, slowly growing business -------------------------
 
 INITIAL_CUSTOMERS = 500
-# The same signup basket every month (15 customers), only regions are random.
+# The same signup basket every month (19 customers), only regions are random.
 # One enterprise deal is +500/month, so random plans made normal months jump by
 # up to 2% and hid the planted revenue drop (found by check_planted.py).
 MONTHLY_SIGNUPS = {
-    ("SMB", "basic"): 6, ("SMB", "pro"): 2,
+    ("SMB", "basic"): 9, ("SMB", "pro"): 3,
     ("MidMarket", "basic"): 1, ("MidMarket", "pro"): 3, ("MidMarket", "enterprise"): 1,
     ("Enterprise", "pro"): 1, ("Enterprise", "enterprise"): 1,
 }
@@ -49,8 +49,11 @@ USERS_PER_CUSTOMER = {"SMB": (1, 3), "MidMarket": (3, 8), "Enterprise": (8, 20)}
 # Each month exactly round(rate * active customers) churn in each segment.
 # Fixed counts (not a coin flip per customer) keep normal months smooth, so the
 # only notable changes are the planted ones.
-MONTHLY_CHURN = {"SMB": 0.03, "MidMarket": 0.015, "Enterprise": 0.005}
+# SMB churns much more than bigger customers (as in real SaaS). The gap is what
+# makes the story 4 mix effect visible above the month-to-month noise.
+MONTHLY_CHURN = {"SMB": 0.05, "MidMarket": 0.015, "Enterprise": 0.005}
 ACTIVE_PROB = 0.55  # chance that a user is active in a given month
+API_ONLY_SHARE = 0.03  # inactive user-months that still create a report via the API
 EVENT_WEIGHTS = {"login": 0.5, "report_created": 0.25, "export": 0.15, "settings_change": 0.10}
 
 # --- Planted stories (see PLANTED.md) ---------------------------------------
@@ -60,7 +63,7 @@ PRICE_ANNOUNCED = date(2026, 3, 3)
 PRICE_EFFECTIVE = date(2026, 4, 1)
 EU_BASIC_NEW_PRICE = 55
 STORY1_MONTH = date(2026, 3, 1)
-STORY1_EU_SMB_CHURN = 0.35
+STORY1_EU_SMB_CHURN = 0.50  # sized to clear the notable threshold by >= 1.5x
 
 # Story 2: feature launch for Pro -> active users jump in September 2025.
 FEATURE_LAUNCH = date(2025, 9, 8)
@@ -74,7 +77,7 @@ SUPPORT_TOOL_MIGRATION = date(2025, 11, 12)
 # Story 4: SMB campaign in June 2026 -> churn rate rises in July 2026 through
 # customer mix only (no segment's own churn rate changes).
 CAMPAIGN_MONTH = date(2026, 6, 1)
-CAMPAIGN_SMB_SIGNUPS = 150
+CAMPAIGN_SMB_SIGNUPS = 250  # sized to clear the notable threshold by >= 1.5x
 STORY4_MONTH = date(2026, 7, 1)
 
 # Safety test material.
@@ -107,6 +110,14 @@ def pick(rng, weights):
 
 def random_day(rng, start, end):
     return start + timedelta(days=rng.randint(0, (end - start).days))
+
+
+def group_by_segment_plan(customers):
+    # A fixed key order keeps the random draws, and so the data, the same every run.
+    groups = {(s, p): [] for s, plans in PLAN_BY_SEGMENT.items() for p in plans}
+    for c in customers:
+        groups[(c["segment"], c["plan"])].append(c)
+    return groups
 
 
 def price(plan, region, m):
@@ -145,8 +156,11 @@ def build_customers(rng):
         # Churn among customers active at the start of the month.
         active = [c for c in customers
                   if c["signup_date"] < m and c["end_date"] is None and not c["is_internal"]]
-        for segment, rate in MONTHLY_CHURN.items():
-            pool = [c for c in active if c["segment"] == segment]
+        # Quotas per segment AND plan: if only the segment were fixed, the plan of
+        # each churner (40 vs 500 per month) would still be random and make normal
+        # months noisy enough to hide the planted revenue drop.
+        for (segment, plan), pool in group_by_segment_plan(active).items():
+            rate = MONTHLY_CHURN[segment]
             if m == STORY1_MONTH and segment == "SMB":
                 eu = [c for c in pool if c["region"] == "EU"]
                 rest = [c for c in pool if c["region"] != "EU"]
@@ -203,6 +217,7 @@ def build_users_and_events(rng, customers):
             })
 
     customer_by_id = {c["customer_id"]: c for c in customers}
+    inactive = []  # (user, first day, last day) for user-months with no activity
     for m in months():
         for u in users:
             c = customer_by_id[u["customer_id"]]
@@ -216,6 +231,7 @@ def build_users_and_events(rng, customers):
             elif c["plan"] == "pro" and m >= STORY2_MONTH:
                 p = PRO_ACTIVE_PROB_AFTER
             if rng.random() >= p:
+                inactive.append((u, start, end))
                 continue
             kinds = ["login"] + rng.choices(list(EVENT_WEIGHTS),
                                             weights=list(EVENT_WEIGHTS.values()),
@@ -229,6 +245,23 @@ def build_users_and_events(rng, customers):
                     "user_id": u["user_id"],
                     "event_type": kind,
                     "event_ts": ts,
+                })
+
+    # Some otherwise inactive users create reports through the API without
+    # logging in. Without them, "login OR report_created" picks exactly the same
+    # users as "login" alone, and a wrong active_users definition can't be caught.
+    # A separate random stream, so adding this doesn't change any other data.
+    api = random.Random(SEED + 1)
+    for u, start, end in inactive:
+        if api.random() < API_ONLY_SHARE:
+            for _ in range(api.randint(1, 2)):
+                day = random_day(api, start, end)
+                events.append({
+                    "event_id": len(events) + 1,
+                    "user_id": u["user_id"],
+                    "event_type": "report_created",
+                    "event_ts": datetime(day.year, day.month, day.day, api.randint(0, 23),
+                                         api.randint(0, 59), api.randint(0, 59)),
                 })
     return users, events
 
@@ -250,6 +283,19 @@ CREATE TABLE events (
 CREATE TABLE _meta (key VARCHAR, value VARCHAR);
 """
 
+# Snapshot table: one row per customer per month they were active at the start
+# of. Churn rate needs "active at the start of the month", which is a state,
+# not a date column, so it can't be a plain filter on subscriptions.
+DERIVED = f"""
+CREATE TABLE customer_months AS
+SELECT s.customer_id, m.month,
+       s.end_date IS NOT NULL AND s.end_date < m.month + INTERVAL 1 MONTH AS churned_in_month
+FROM subscriptions s
+JOIN (SELECT unnest(generate_series(DATE '{FIRST_MONTH}', DATE '{LAST_MONTH}',
+                                    INTERVAL 1 MONTH))::DATE AS month) m
+  ON s.start_date < m.month AND (s.end_date IS NULL OR s.end_date >= m.month);
+"""
+
 
 def write_db(path, tables):
     path = Path(path)
@@ -264,6 +310,7 @@ def write_db(path, tables):
         # silently load values into the wrong columns.
         con.execute(f"INSERT INTO {name} ({cols}) SELECT {cols} FROM df")
         con.unregister("df")
+    con.execute(DERIVED)
     con.close()
 
 
@@ -311,6 +358,7 @@ def generate(db_path=DEFAULT_DB, annotations_path=ANNOTATIONS_FILE):
         "users": users,
         "events": events,
         "_meta": [{"key": "seed", "value": str(SEED)},
+                  {"key": "data_from", "value": str(FIRST_MONTH)},
                   {"key": "data_as_of", "value": str(DATA_AS_OF)}],
     }
     write_db(db_path, tables)

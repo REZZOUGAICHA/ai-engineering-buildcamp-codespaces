@@ -1,0 +1,31 @@
+# Who can see what. Enforced by src/analyst/policy.py and the compiler, never
+# by the prompt. Deny by default: a role not listed here sees nothing.
+
+# A result row built from fewer customers than this is merged into
+# "Other (small groups)" or blanked, because it would show one customer's data.
+min_group_size: 5
+
+# Columns that must never appear in any output, for any role.
+hidden_columns: [users.email, customers.name]
+
+roles:
+  ceo:
+    description: Sees every metric, every breakdown, every region.
+    metrics: "*"
+    dimensions: "*"
+
+  eu_manager:
+    description: Runs the EU business. Sees every metric, but only EU customers.
+    metrics: "*"
+    dimensions: "*"
+    row_filter: {dimension: region, values: [EU]}
+
+  finance_analyst:
+    description: Revenue and customer counts. No product usage data.
+    metrics: [revenue, paying_customers, arpu, new_customers, churned_customers, churn_rate]
+    dimensions: "*"
+
+  product_manager:
+    description: Product usage only, without regional breakdowns.
+    metrics: [active_users, reports_created]
+    dimensions: [plan, segment]

@@ -21,6 +21,10 @@ import yaml
 import generate as g
 
 NOTABLE_K = 2  # same default as the skill's notable change rule
+# Planted stories must sit clearly on one side of the threshold, never near it:
+# notable stories at >= MARGIN x threshold, flat months at <= threshold / MARGIN.
+# Fixed before resizing any story, so stories are sized to the rule, not the reverse.
+MARGIN = 1.5
 results = []
 
 
@@ -71,11 +75,16 @@ def prev(m, n=1):
 
 
 def notable(total, m):
-    """Change from the previous month, and whether it beats k x median of the last 6."""
+    """Change from the previous month, its threshold (k x median of the last 6
+    changes), and how many thresholds the change is (above 1 means notable)."""
     pct = lambda x: (total[x] - total[prev(x)]) / total[prev(x)]
     change = pct(m)
-    baseline = statistics.median(abs(pct(prev(m, i))) for i in range(1, 7))
-    return change, baseline, abs(change) > NOTABLE_K * baseline
+    threshold = NOTABLE_K * statistics.median(abs(pct(prev(m, i))) for i in range(1, 7))
+    return change, threshold, abs(change) / threshold
+
+
+def describe(change, threshold, times):
+    return f"change {change:+.2%}, threshold {threshold:.2%}, {times:.2f}x threshold"
 
 
 def top_driver(by_seg, m):
@@ -126,10 +135,9 @@ def main():
 
     # Story 1: revenue drop in March 2026, concentrated in EU and SMB.
     revenue = series(con, REVENUE)["all"]
-    change, base, is_notable = notable(revenue, g.STORY1_MONTH)
-    check("story 1: revenue drop in March 2026 is notable",
-          change < 0 and is_notable,
-          f"change {change:+.2%}, baseline {base:.2%}, threshold {NOTABLE_K * base:.2%}")
+    change, threshold, times = notable(revenue, g.STORY1_MONTH)
+    check(f"story 1: revenue drop in March 2026 is notable, by >= {MARGIN}x threshold",
+          change < 0 and times >= MARGIN, describe(change, threshold, times))
     for dim, expected in (("c.region", "EU"), ("c.segment", "SMB")):
         seg, share = top_driver(series(con, REVENUE, dim), g.STORY1_MONTH)
         check(f"story 1: top {dim[2:]} driver is {expected} with over half of the drop",
@@ -137,19 +145,18 @@ def main():
 
     # Story 2: active users jump in September 2025, driven by the Pro plan.
     actives = series(con, ACTIVE_USERS)["all"]
-    change, base, is_notable = notable(actives, g.STORY2_MONTH)
-    check("story 2: active users rise in September 2025 is notable",
-          change > 0 and is_notable,
-          f"change {change:+.2%}, baseline {base:.2%}, threshold {NOTABLE_K * base:.2%}")
+    change, threshold, times = notable(actives, g.STORY2_MONTH)
+    check(f"story 2: active users rise in September 2025 is notable, by >= {MARGIN}x threshold",
+          change > 0 and times >= MARGIN, describe(change, threshold, times))
     seg, share = top_driver(series(con, ACTIVE_USERS, "c.plan"), g.STORY2_MONTH)
     check("story 2: top plan driver is pro with over half of the rise",
           seg == "pro" and share > 0.5, f"top {seg}, share of change {share:.0%}")
 
     # Story 3: flat month, nothing notable in revenue or active users.
     for label, total in (("revenue", revenue), ("active users", actives)):
-        change, base, is_notable = notable(total, g.FLAT_MONTH)
-        check(f"story 3: {label} in November 2025 is NOT notable", not is_notable,
-              f"change {change:+.2%}, baseline {base:.2%}, threshold {NOTABLE_K * base:.2%}")
+        change, threshold, times = notable(total, g.FLAT_MONTH)
+        check(f"story 3: {label} in November 2025 is NOT notable, by <= threshold / {MARGIN}",
+              times <= 1 / MARGIN, describe(change, threshold, times))
 
     # Story 4: churn rate rises in July 2026 through customer mix, not segment rates.
     a, b = churn_by_segment(con, prev(g.STORY4_MONTH)), churn_by_segment(con, g.STORY4_MONTH)
@@ -162,9 +169,9 @@ def main():
         if m >= prev(g.STORY4_MONTH, 7):
             seg = churn_by_segment(con, m)
             churn_rate[m] = sum(v[0] for v in seg.values()) / sum(v[1] for v in seg.values())
-    change, base, is_notable = notable(churn_rate, g.STORY4_MONTH)
-    check("story 4: churn rate rise in July 2026 is notable", change > 0 and is_notable,
-          f"relative change {change:+.2%}, baseline {base:.2%}, threshold {NOTABLE_K * base:.2%}")
+    change, threshold, times = notable(churn_rate, g.STORY4_MONTH)
+    check(f"story 4: churn rate rise in July 2026 is notable, by >= {MARGIN}x threshold",
+          change > 0 and times >= MARGIN, describe(change, threshold, times))
     rates = {s: (a[s][0] / a[s][1], b[s][0] / b[s][1]) for s in a}
     check("story 4: no segment's own churn rate moves by more than 0.5 points",
           all(abs(rb - ra) < 0.005 for ra, rb in rates.values()),
@@ -185,6 +192,14 @@ def main():
     without = actives[g.FLAT_MONTH]
     check("internal accounts: excluding them changes active users",
           with_internal > without, f"{with_internal} with internal, {without:.0f} without")
+
+    api_only = con.execute("""
+        SELECT COUNT(*) FROM (
+            SELECT user_id, date_trunc('month', event_ts) FROM events GROUP BY ALL
+            HAVING bool_and(event_type = 'report_created'))
+    """).fetchone()[0]
+    check("API-only users: some user-months have reports but no login",
+          api_only > 0, f"{api_only} user-months (so 'login OR report_created' != 'login' alone)")
 
     dates = {a["date"] for a in yaml.safe_load(g.ANNOTATIONS_FILE.read_text())["annotations"]}
     expected = {g.PRICE_ANNOUNCED, g.PRICE_EFFECTIVE, g.FEATURE_LAUNCH,

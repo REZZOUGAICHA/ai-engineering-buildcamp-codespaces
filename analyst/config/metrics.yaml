@@ -1,0 +1,152 @@
+# The company's metric definitions: the semantic layer.
+# The agent must use these definitions and never invent its own.
+# Loaded and validated by src/analyst/semantic.py; a bad entry fails loudly.
+
+# Dimensions: the ways a metric can be broken down. Each one is a column.
+dimensions:
+  region:
+    column: customers.region
+    description: Customer's sales region.
+    values: [EU, NA, APAC, LATAM]
+  segment:
+    column: customers.segment
+    description: Customer size.
+    values: [SMB, MidMarket, Enterprise]
+  plan:
+    column: customers.plan
+    description: Subscription plan.
+    values: [basic, pro, enterprise]
+
+# Sources: where metrics read from, how they join to customers (for the
+# dimensions), and rows that are always excluded.
+sources:
+  invoices:
+    table: invoices
+    joins:
+      - {table: customers, "on": customers.customer_id = invoices.customer_id}
+    filters: NOT customers.is_internal
+  subscriptions:
+    table: subscriptions
+    joins:
+      - {table: customers, "on": customers.customer_id = subscriptions.customer_id}
+    filters: NOT customers.is_internal
+  customer_months:
+    table: customer_months
+    joins:
+      - {table: customers, "on": customers.customer_id = customer_months.customer_id}
+    filters: NOT customers.is_internal
+  events:
+    table: events
+    joins:
+      - {table: users, "on": users.user_id = events.user_id}
+      - {table: customers, "on": customers.customer_id = users.customer_id}
+    filters: NOT customers.is_internal
+
+metrics:
+  revenue:
+    description: Total invoiced amount. Invoices are issued at month end for every customer active that day.
+    owner: Finance
+    source: invoices
+    aggregation: additive
+    expression: SUM(invoices.amount)
+    time_column: invoices.invoice_month
+    allowed_dimensions: [region, segment, plan]
+    synonyms: [sales, billings, invoiced revenue]
+    unit: USD
+    direction: up_is_good
+    caveats: Internal test accounts are excluded. No refunds or discounts are recorded.
+
+  paying_customers:
+    description: Distinct customers with at least one invoice in the period.
+    owner: Finance
+    source: invoices
+    aggregation: distinct_count
+    expression: COUNT(DISTINCT invoices.customer_id)
+    time_column: invoices.invoice_month
+    allowed_dimensions: [region, segment, plan]
+    synonyms: [customer count, number of customers, customers]
+    unit: customers
+    direction: up_is_good
+    caveats: Internal test accounts are excluded.
+
+  arpu:
+    description: Average revenue per paying customer (revenue / paying customers).
+    owner: Finance
+    source: invoices
+    aggregation: ratio
+    numerator: SUM(invoices.amount)
+    denominator: COUNT(DISTINCT invoices.customer_id)
+    time_column: invoices.invoice_month
+    allowed_dimensions: [region, segment, plan]
+    synonyms: [average revenue per customer, revenue per customer, average revenue per user]
+    unit: USD
+    direction: up_is_good
+    caveats: For periods longer than a month, this is revenue over the whole period divided by distinct customers in it.
+
+  new_customers:
+    description: Customers whose subscription started in the period.
+    owner: Sales
+    source: subscriptions
+    aggregation: additive
+    expression: COUNT(*)
+    time_column: subscriptions.start_date
+    allowed_dimensions: [region, segment, plan]
+    synonyms: [signups, new signups, acquisitions, new accounts]
+    unit: customers
+    direction: up_is_good
+    caveats: Internal test accounts are excluded.
+
+  churned_customers:
+    description: Customers whose subscription ended in the period.
+    owner: Customer Success
+    source: subscriptions
+    aggregation: additive
+    expression: COUNT(*)
+    time_column: subscriptions.end_date
+    allowed_dimensions: [region, segment, plan]
+    synonyms: [lost customers, cancellations, churned accounts]
+    unit: customers
+    direction: down_is_good
+    caveats: Internal test accounts are excluded.
+
+  churn_rate:
+    description: Share of customers active at the start of a month who churned during that month.
+    owner: Customer Success
+    source: customer_months
+    aggregation: ratio
+    numerator: COUNT(*) FILTER (WHERE customer_months.churned_in_month)
+    denominator: COUNT(*)
+    time_column: customer_months.month
+    allowed_dimensions: [region, segment, plan]
+    synonyms: [churn, customer churn, attrition, cancellation rate]
+    unit: percent
+    direction: down_is_good
+    caveats: For periods longer than a month, this is the average monthly churn rate (all churned customer-months / all active customer-months).
+
+  active_users:
+    description: Distinct users with at least one login or report_created event in the period.
+    owner: Product
+    source: events
+    aggregation: distinct_count
+    expression: COUNT(DISTINCT events.user_id)
+    filters: events.event_type IN ('login', 'report_created')
+    time_column: events.event_ts
+    allowed_dimensions: [region, segment, plan]
+    synonyms: [actives, MAU, active accounts, monthly active users]
+    unit: users
+    direction: up_is_good
+    caveats: Internal test accounts are excluded. Counted over the whole period, so a quarter is not the sum of its months.
+
+  reports_created:
+    description: Number of report_created events in the period.
+    owner: Product
+    source: events
+    aggregation: additive
+    expression: COUNT(*)
+    filters: events.event_type = 'report_created'
+    time_column: events.event_ts
+    allowed_dimensions: [region, segment, plan]
+    synonyms: [reports, report count, reports generated]
+    unit: reports
+    direction: up_is_good
+    caveats: Internal test accounts are excluded.

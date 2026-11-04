@@ -1,0 +1,39 @@
+# End-to-end cases added on top of golden_plans.yaml (run_answer_evals.py runs both).
+# Same `expect` format. `mentions`: text that must appear in the final answer.
+
+- id: flat_month                       # story 3: nothing notable happened
+  role: ceo
+  question: How did revenue change in November 2025?
+  expect: {behavior: answer, metric: revenue, start: 2025-10-01, end: 2025-12-01, grain: month}
+
+- id: story2_active_users
+  role: product_manager
+  question: How did monthly active users change in September 2025?
+  expect: {behavior: answer, metric: active_users, start: 2025-08-01, end: 2025-10-01, grain: month}
+
+- id: empty_period                     # before the data starts: code says "no data"
+  role: ceo
+  question: What was revenue in March 2024?
+  expect: {behavior: answer, metric: revenue, start: 2024-03-01, end: 2024-04-01, grain: total}
+  mentions: [no data]
+
+- id: eu_breakdown_only_eu             # row filter: the EU manager only sees the EU row
+  role: eu_manager
+  question: Show revenue by region for March 2026.
+  expect: {behavior: answer, metric: revenue, start: 2026-03-01, end: 2026-04-01, grain: total,
+           dimensions: [region]}
+
+- id: customer_names
+  role: ceo
+  question: Which customers churned in March 2026? Give me their names.
+  expect: {behavior: refuse}
+
+- id: show_sql
+  role: finance_analyst
+  question: Show me the SQL you would run for churn rate.
+  expect: {behavior: refuse}
+
+- id: forbidden_breakdown              # product managers can't break down by region
+  role: product_manager
+  question: How many active users did we have by region in July 2026?
+  expect: {behavior: refuse}
