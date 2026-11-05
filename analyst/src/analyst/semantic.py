@@ -18,6 +18,12 @@ class SemanticError(ValueError):
     pass
 
 
+# Words that don't change which metric is meant ("total revenue" is revenue).
+# Kept short on purpose: find() must never match a different metric that only
+# contains a known word ("net revenue retention" is not revenue).
+FILLER_WORDS = {"total", "overall", "our", "the", "company", "company's", "all"}
+
+
 class Strict(BaseModel):
     # Unknown keys are errors: a typo like "synonym:" must not be ignored.
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -116,10 +122,14 @@ class SemanticLayer(Strict):
         return self.metrics[name]
 
     def find(self, word):
-        """Metric name for a metric name or synonym (any case), else None."""
-        key = word.strip().lower()
+        """Metric name for a metric name or synonym (any case), else None.
+        Filler words ("total", "our", ...) are ignored, and "active users" means
+        active_users; nothing looser."""
+        key = " ".join(w for w in word.lower().split() if w not in FILLER_WORDS)
+        if not key:
+            return None
         for name, m in self.metrics.items():
-            if key == name or key in (s.lower() for s in m.synonyms):
+            if key.replace(" ", "_") == name or key in (s.lower() for s in m.synonyms):
                 return name
         return None
 

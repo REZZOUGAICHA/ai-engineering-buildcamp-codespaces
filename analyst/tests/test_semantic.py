@@ -33,6 +33,22 @@ def test_find_by_name_or_synonym(layer, word, metric):
     assert layer.find(word) == metric
 
 
+@pytest.mark.parametrize("word, metric", [
+    # filler words that don't change the meaning are ignored
+    ("total revenue", "revenue"), ("our total sales", "revenue"),
+    ("overall churn rate", "churn_rate"), ("the company's MAU", "active_users"),
+    # people type spaces, metric names use underscores
+    ("active users", "active_users"), ("New Customers", "new_customers"),
+    # but nothing looser: a different metric that contains a known word stays unknown,
+    # so the validator can't push the model to swap in "revenue" for it
+    ("net revenue retention", None), ("revenue growth", None),
+    # only filler words: not a metric
+    ("total", None), ("our company", None),
+])
+def test_find_ignores_filler_words_only(layer, word, metric):
+    assert layer.find(word) == metric
+
+
 BROKEN_CONFIGS = {
     "unknown source": lambda r: r["metrics"]["revenue"].update(source="payments"),
     "unknown dimension": lambda r: r["metrics"]["revenue"]["allowed_dimensions"].append("country"),
