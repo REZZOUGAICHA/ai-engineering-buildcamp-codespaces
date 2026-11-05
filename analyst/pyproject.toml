@@ -28,3 +28,7 @@ link-mode = "copy"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Tests marked llm call the real model (slow, uses API calls, results can vary).
+# Skipped by default; run them with: uv run pytest -m llm
+markers = ["llm: calls the real LLM"]
+addopts = "-m 'not llm'"
