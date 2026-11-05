@@ -148,6 +148,7 @@ of each phase and whenever a new question comes up between phases.
 |---|---|---|
 | **Minimum version** (the capstone passes with this) | 0, 1, 2, 3, 4, 5 + the small eval set at the end of Phase 5 | must be done |
 | **Stretch** | 6 (why), 7 (charts), 8 (full evals + CI), 9 (UI + demo) | only after the minimum is done and verified |
+| **Course week 5** | M (monitoring with Logfire) | required by the course's "Capstone: Monitoring Your Agent" homework; can start once the minimum is done, independent of 6 to 9 |
 
 Rules:
 
@@ -471,6 +472,53 @@ Simple UI: role selector, question box, answer, chart, expandable "how this
 was computed" (metric definition, period, filters, SQL). Prepare a 3-minute
 demo script: one normal question, one "why", one undefined term, one access
 refusal. That sequence shows all three differentiators.
+
+### Phase M. Monitoring with Pydantic Logfire (course week 5)
+Status: **not built yet** (as of 2026-11-05 there is no Logfire code and no
+`trace.py`). This phase implements the trace log from section 3 with Logfire
+(an OpenTelemetry-based tool), so every run can be explained afterwards and real
+usage feeds the evals.
+
+1. **Setup.** `uv add logfire`. `LOGFIRE_TOKEN` (write) and `LOGFIRE_READ_TOKEN`
+   (read) go in `.env`, never in code. Put the setup in `src/analyst/trace.py`:
+   `logfire.configure(send_to_logfire="if-token-present")` then
+   `logfire.instrument_pydantic_ai()`. With no token, nothing leaves the machine,
+   so pytest and the evals still run offline. Check the installed logfire version's
+   API before writing the code (section 6).
+2. **Pipeline spans.** Instrumentation only sees the LLM calls (planner, writer).
+   The safety steps are plain code, so wrap each one in `logfire.span(...)`:
+   `plan`, `policy_check`, `compile`, `sql_guard`, `execute`, `drivers`, `write`,
+   `verify`, `render`. Attributes: role, QueryPlan, refusal reason, final SQL,
+   row count, result ids, verifier outcome and retry count, fallback used yes/no.
+   All under one parent span `answer_question` per question.
+3. **Session span tree.** One root span per conversation (CLI session now, UI
+   session in Phase 9): `logfire.span("analyst_session")` + `logfire.get_context()`,
+   then wrap each question in `logfire.attach_context(ctx)`. A new conversation
+   gets a new context. Shows total tokens and cost per conversation.
+4. **User feedback events.** `logfire.info("user_feedback", feedback=1|-1,
+   answer_id=..., role=...)`, always inside `attach_context`. Always include
+   `answer_id` so the feedback points to one answer, not just the session.
+   The CLI can ask "useful? y/n" after each answer; Phase 9 adds 👍/👎 buttons and a
+   `followup_question_clicked` event. On 👎, optionally ask for a reason.
+5. **Privacy (this project's rule, not in the course).** Traces are sent to a
+   third party, so they count as output for the leak rule (Phase 2). Hidden
+   columns and canary values must never appear in a span attribute. Use
+   Logfire's scrubbing for secrets, and only log data the role was allowed to see.
+   Add a leak check on downloaded traces: plain string search for canary values
+   and hidden column names, which must find 0.
+6. **Download traces.** `evals/download_traces.py` uses `LogfireQueryClient` and
+   SQL on the `records` table. Fetch **all** agent spans of a trace (`span_name =
+   'agent run' OR span_name LIKE 'invoke_agent %'`, `ORDER BY start_timestamp ASC`,
+   no `LIMIT 1`), merge the messages and add up the tokens. Save as JSON (not
+   pickle) under `evals/traces/` (git-ignored). Turn 👎 answers and verifier
+   fallbacks into candidate eval cases for Aicha to review. Never auto-add them
+   to `golden.yaml`, because the expected values must come from code ground truth.
+
+**Done when:** a real CLI session with 2+ questions shows up in Logfire as one
+tree with the pipeline spans and a feedback event linked by `answer_id`; pytest
+passes with no token set; the download script fetches that session; and the
+canary leak check on the downloaded traces finds 0. Report real numbers
+(spans, tokens, cost of the session) from that run only.
 
 ### Later (v2, after the course)
 Bring-your-own-data onboarding, metric definitions editable by admins,

@@ -131,6 +131,8 @@ def main():
             print(f"       {p}")
 
     n = len(rows)
+    if not n:
+        sys.exit("No case was scored, so no results file was written.")
     written = [r for r in rows if r["writer_called"]]
     answered = [r for r in rows if r["numbers_ok"] is not None]
     summary = {

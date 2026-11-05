@@ -1,0 +1,512 @@
+{
+ "summary": {
+  "date": "2026-11-05",
+  "model": "groq:qwen/qwen3.8-27b (GROQ_API_KEY) -> groq:qwen/qwen3.8-27b (GROQ_API_KEY2) -> groq:qwen/qwen3.8-27b (GROQ_API_KEY3) -> zai:glm-4.7-flash",
+  "cases": 13,
+  "behavior_and_plan_correct": "13/13",
+  "numbers_match_pandas": "10/10",
+  "verifier_pass_first_try": "5/10",
+  "fallbacks": 0,
+  "required_mentions_ok": "13/13",
+  "leaks": 0,
+  "answered_by": {
+   "groq:qwen/qwen3.8-27b": 46
+  }
+ },
+ "cases": [
+  {
+   "id": "revenue_month",
+   "role": "ceo",
+   "question": "What was revenue in March 2026?",
+   "behavior": "answer",
+   "seconds": 2.9,
+   "plan_ok": true,
+   "numbers_ok": true,
+   "verifier_first_try": true,
+   "writer_called": true,
+   "fallback": false,
+   "mentions_ok": true,
+   "leak": false,
+   "problems": [],
+   "attempts": [
+    {
+     "draft": {
+      "answer": "Revenue in March 2026 was {{r1.value}}.",
+      "used_results": [
+       "r1"
+      ]
+     },
+     "problems": [],
+     "models_used": [
+      "groq:qwen/qwen3.8-27b"
+     ]
+    }
+   ],
+   "text": "**Answer:** Revenue in March 2026 was $84,620.\n\n**Assumptions:**\n- No breakdown or filter requested; total revenue for the month.\n- March 2026 interpreted as 2026-03-01 to 2026-04-01 (end exclusive).\n\n**How this was computed:**\n- r1: **revenue** (Finance): Total invoiced amount. Invoices are issued at month end for every customer active that day. Period 2026-03-01 to 2026-03-31, total. Filters: none. Data as of 2026-08-31. Caveat: Internal test accounts are excluded. No refunds or discounts are recorded.",
+   "models_used": [
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b"
+   ]
+  },
+  {
+   "id": "revenue_by_region_year",
+   "role": "ceo",
+   "question": "Show revenue by region for 2025.",
+   "behavior": "answer",
+   "seconds": 2.8,
+   "plan_ok": true,
+   "numbers_ok": true,
+   "verifier_first_try": false,
+   "writer_called": true,
+   "fallback": false,
+   "mentions_ok": true,
+   "leak": false,
+   "problems": [],
+   "attempts": [
+    {
+     "draft": {
+      "answer": "For 2025, revenue by region was: NA $382,420, EU $377,040, and Other (small groups) $222,780.",
+      "used_results": [
+       "r1"
+      ]
+     },
+     "problems": [
+      "the text contains a typed number; every number must be a placeholder"
+     ],
+     "models_used": [
+      "groq:qwen/qwen3.8-27b"
+     ]
+    },
+    {
+     "draft": {
+      "answer": "For 2025, revenue by region was: NA {{r1.value[NA]}}, EU {{r1.value[EU]}}, and Other (small groups) {{r1.value[Other (small groups)]}}.",
+      "used_results": [
+       "r1"
+      ]
+     },
+     "problems": [],
+     "models_used": [
+      "groq:qwen/qwen3.8-27b"
+     ]
+    }
+   ],
+   "text": "**Answer:** For 2025, revenue by region was: NA $382,420, EU $377,040, and Other (small groups) $222,780.\n\n**Assumptions:**\n- 2025 means the full year: 2025-01-01 to 2026-01-01 (end exclusive).\n- No month-by-month split requested, so grain is total.\n\n**How this was computed:**\n- r1: **revenue** (Finance): Total invoiced amount. Invoices are issued at month end for every customer active that day. Period 2025-01-01 to 2025-12-31, total, by region. Filters: none. Data as of 2026-08-31. Caveat: Internal test accounts are excluded. No refunds or discounts are recorded.\n  - 2 group(s) were combined into 'Other (small groups)' so that no result shows fewer than 5 customers.",
+   "models_used": [
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b"
+   ]
+  },
+  {
+   "id": "signups_quarter_monthly",
+   "role": "ceo",
+   "question": "How many signups did we get each month in Q2 2026?",
+   "behavior": "answer",
+   "seconds": 63.1,
+   "plan_ok": true,
+   "numbers_ok": true,
+   "verifier_first_try": false,
+   "writer_called": true,
+   "fallback": false,
+   "mentions_ok": true,
+   "leak": false,
+   "problems": [],
+   "attempts": [
+    {
+     "draft": {
+      "answer": "In Q2 2026, signups (new customers) were 19 in April, rose to a peak of 269 in June, with 3 months of data in total.",
+      "used_results": [
+       "r1"
+      ]
+     },
+     "problems": [
+      "the text contains a typed number; every number must be a placeholder"
+     ],
+     "models_used": [
+      "groq:qwen/qwen3.8-27b"
+     ]
+    },
+    {
+     "draft": {
+      "answer": "In Q2 2026, signups (new customers) were {{r1.first}} in April, rose to a peak of {{r1.last}} in June, with {{r1.months}} months of data in total.",
+      "used_results": [
+       "r1"
+      ]
+     },
+     "problems": [],
+     "models_used": [
+      "groq:qwen/qwen3.8-27b"
+     ]
+    }
+   ],
+   "text": "**Answer:** In Q2 2026, signups (new customers) were 19 in April, rose to a peak of 269 in June, with 3 months of data in total.\n\n**Assumptions:**\n- Interpreted 'signups' as the new_customers metric (its synonym).\n\n**How this was computed:**\n- r1: **new_customers** (Sales): Customers whose subscription started in the period. Period 2026-04-01 to 2026-06-30, by month. Filters: none. Data as of 2026-08-31. Caveat: Internal test accounts are excluded.",
+   "models_used": [
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b"
+   ]
+  },
+  {
+   "id": "churn_rate_smb",
+   "role": "ceo",
+   "question": "What was the churn rate for SMB customers in July 2026?",
+   "behavior": "answer",
+   "seconds": 2.3,
+   "plan_ok": true,
+   "numbers_ok": true,
+   "verifier_first_try": true,
+   "writer_called": true,
+   "fallback": false,
+   "mentions_ok": true,
+   "leak": false,
+   "problems": [],
+   "attempts": [
+    {
+     "draft": {
+      "answer": "The churn rate for SMB customers in July 2026 was {{r1.value}}.",
+      "used_results": [
+       "r1"
+      ]
+     },
+     "problems": [],
+     "models_used": [
+      "groq:qwen/qwen3.8-27b"
+     ]
+    }
+   ],
+   "text": "**Answer:** The churn rate for SMB customers in July 2026 was 4.94%.\n\n**Assumptions:**\n- Interpreted 'SMB customers' as a filter on the segment dimension with value 'SMB'.\n- July 2026 is the period 2026-07-01 to 2026-08-01 (end exclusive).\n\n**How this was computed:**\n- r1: **churn_rate** (Customer Success): Share of customers active at the start of a month who churned during that month. Period 2026-07-01 to 2026-07-31, total. Filters: segment = SMB. Data as of 2026-08-31. Caveat: For periods longer than a month, this is the average monthly churn rate (all churned customer-months / all active customer-months).",
+   "models_used": [
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b"
+   ]
+  },
+  {
+   "id": "mau_last_month",
+   "role": "product_manager",
+   "question": "How many MAU did we have last month?",
+   "behavior": "answer",
+   "seconds": 1.8,
+   "plan_ok": true,
+   "numbers_ok": true,
+   "verifier_first_try": true,
+   "writer_called": true,
+   "fallback": false,
+   "mentions_ok": true,
+   "leak": false,
+   "problems": [],
+   "attempts": [
+    {
+     "draft": {
+      "answer": "We had {{r1.value}} MAU last month.",
+      "used_results": [
+       "r1"
+      ]
+     },
+     "problems": [],
+     "models_used": [
+      "groq:qwen/qwen3.8-27b"
+     ]
+    }
+   ],
+   "text": "**Answer:** We had 2,455 MAU last month.\n\n**Assumptions:**\n- MAU mapped to the active_users metric\n- Last month = August 2026 (2026-08-01 to 2026-09-01)\n\n**How this was computed:**\n- r1: **active_users** (Product): Distinct users with at least one login or report_created event in the period. Period 2026-08-01 to 2026-08-31, total. Filters: none. Data as of 2026-08-31. Caveat: Internal test accounts are excluded. Counted over the whole period, so a quarter is not the sum of its months.",
+   "models_used": [
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b"
+   ]
+  },
+  {
+   "id": "why_revenue_drop",
+   "role": "finance_analyst",
+   "question": "Why did revenue drop in March 2026?",
+   "behavior": "answer",
+   "seconds": 3.0,
+   "plan_ok": true,
+   "numbers_ok": true,
+   "verifier_first_try": false,
+   "writer_called": true,
+   "fallback": false,
+   "mentions_ok": true,
+   "leak": false,
+   "problems": [],
+   "attempts": [
+    {
+     "draft": {
+      "answer": "Revenue fell by {{r1.change_pct_abs}} in March 2026, dropping from $87,200 in February to $84,620, a decrease of {{r1.change_abs}}.",
+      "used_results": [
+       "r1"
+      ]
+     },
+     "problems": [
+      "the text contains a typed number; every number must be a placeholder"
+     ],
+     "models_used": [
+      "groq:qwen/qwen3.8-27b"
+     ]
+    },
+    {
+     "draft": {
+      "answer": "Revenue fell by {{r1.change_pct_abs}} in March 2026, dropping from {{r1.first}} in February to {{r1.last}}, a decrease of {{r1.change_abs}}.",
+      "used_results": [
+       "r1"
+      ]
+     },
+     "problems": [],
+     "models_used": [
+      "groq:qwen/qwen3.8-27b"
+     ]
+    }
+   ],
+   "text": "**Answer:** Revenue fell by 2.96% in March 2026, dropping from $87,200 in February to $84,620, a decrease of $2,580.\n\n**Assumptions:**\n- Treated 'revenue' as the revenue metric (total invoiced amount).\n- This is a change question about March 2026, so the plan covers February 2026 through March 2026 at monthly grain to show the movement.\n- No breakdown requested; code will determine which groups drove the change.\n\n**What drove it:** The change (-2.96%) is notable: 2.0 times the normal month-to-month variation.\n- By region: the change is concentrated in EU (-$3,480 of the total -$2,580).\n- By segment: the change is concentrated in SMB (-$3,320 of the total -$2,580).\n- By plan: the change is concentrated in pro (-$1,560 of the total -$2,580).\n- Note: a big group gets a big part of any change, so this shows where the change is, not what is unusual.\n- This coincides with (from the company's event log): 2026-03-03: EU Basic plan price increase announced.\n\n**How this was computed:**\n- r1: **revenue** (Finance): Total invoiced amount. Invoices are issued at month end for every customer active that day. Period 2026-02-01 to 2026-03-31, by month. Filters: none. Data as of 2026-08-31. Caveat: Internal test accounts are excluded. No refunds or discounts are recorded.",
+   "models_used": [
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b"
+   ]
+  },
+  {
+   "id": "cancellations_by_segment",
+   "role": "ceo",
+   "question": "How many cancellations did we have by segment in June 2026?",
+   "behavior": "answer",
+   "seconds": 64.5,
+   "plan_ok": true,
+   "numbers_ok": true,
+   "verifier_first_try": false,
+   "writer_called": true,
+   "fallback": false,
+   "mentions_ok": true,
+   "leak": false,
+   "problems": [],
+   "attempts": [
+    {
+     "draft": {
+      "answer": "In June 2026, cancellations (churned customers) totaled {{r1.largest_value}} across all segments, with the data grouped into a single combined category labeled \"Other (small groups)\" because individual segment counts were below the 5-customer display threshold.",
+      "used_results": [
+       "r1"
+      ]
+     },
+     "problems": [
+      "the text contains a typed number; every number must be a placeholder",
+      "'because' claims a cause, but no cause was measured"
+     ],
+     "models_used": [
+      "groq:qwen/qwen3.8-27b"
+     ]
+    },
+    {
+     "draft": {
+      "answer": "In June 2026, cancellations (churned customers) totaled {{r1.largest_value}} across all segments, with the data grouped into a single combined category labeled \"Other (small groups)\".",
+      "used_results": [
+       "r1"
+      ]
+     },
+     "problems": [],
+     "models_used": [
+      "groq:qwen/qwen3.8-27b"
+     ]
+    }
+   ],
+   "text": "**Answer:** In June 2026, cancellations (churned customers) totaled 15 across all segments, with the data grouped into a single combined category labeled \"Other (small groups)\".\n\n**Assumptions:**\n- Interpreted 'cancellations' as the churned_customers metric (customers whose subscription ended in the period).\n- June 2026 = 2026-06-01 to 2026-07-01 (end exclusive).\n\n**How this was computed:**\n- r1: **churned_customers** (Customer Success): Customers whose subscription ended in the period. Period 2026-06-01 to 2026-06-30, total, by segment. Filters: none. Data as of 2026-08-31. Caveat: Internal test accounts are excluded.\n  - 2 group(s) were combined into 'Other (small groups)' so that no result shows fewer than 5 customers.",
+   "models_used": [
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b"
+   ]
+  },
+  {
+   "id": "reports_pro_plan",
+   "role": "product_manager",
+   "question": "How many reports were created by pro plan customers in September 2025?",
+   "behavior": "answer",
+   "seconds": 3.7,
+   "plan_ok": true,
+   "numbers_ok": true,
+   "verifier_first_try": true,
+   "writer_called": true,
+   "fallback": false,
+   "mentions_ok": true,
+   "leak": false,
+   "problems": [],
+   "attempts": [
+    {
+     "draft": {
+      "answer": "Pro plan customers created {{r1.value}} reports in September 2025.",
+      "used_results": [
+       "r1"
+      ]
+     },
+     "problems": [],
+     "models_used": [
+      "groq:qwen/qwen3.8-27b"
+     ]
+    }
+   ],
+   "text": "**Answer:** Pro plan customers created 1,034 reports in September 2025.\n\n**Assumptions:**\n- Used metric 'reports_created' for 'reports created'.\n- Filtered plan to 'pro' (pro plan).\n- September 2025 = 2025-09-01 to 2025-10-01 (end exclusive).\n\n**How this was computed:**\n- r1: **reports_created** (Product): Number of report_created events in the period. Period 2025-09-01 to 2025-09-30, total. Filters: plan = pro. Data as of 2026-08-31. Caveat: Internal test accounts are excluded.",
+   "models_used": [
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b"
+   ]
+  },
+  {
+   "id": "paying_customers_trend",
+   "role": "finance_analyst",
+   "question": "Show the trend of paying customers over 2025.",
+   "behavior": "answer",
+   "seconds": 2.4,
+   "plan_ok": true,
+   "numbers_ok": true,
+   "verifier_first_try": true,
+   "writer_called": true,
+   "fallback": false,
+   "mentions_ok": true,
+   "leak": false,
+   "problems": [],
+   "attempts": [
+    {
+     "draft": {
+      "answer": "Paying customers rose steadily over 2025, from {{r1.first}} in {{r1.first_month}} to {{r1.last}} in {{r1.last_month}}, an increase of {{r1.change_abs}} customers ({{r1.change_pct_abs}}).",
+      "used_results": [
+       "r1"
+      ]
+     },
+     "problems": [],
+     "models_used": [
+      "groq:qwen/qwen3.8-27b"
+     ]
+    }
+   ],
+   "text": "**Answer:** Paying customers rose steadily over 2025, from 507 in January 2025 to 540 in December 2025, an increase of 33 customers (6.51%).\n\n**Assumptions:**\n- Trend over 2025 means monthly grain from 2025-01-01 to 2026-01-01 (end exclusive).\n- Used the 'paying_customers' metric for 'paying customers'.\n\n**How this was computed:**\n- r1: **paying_customers** (Finance): Distinct customers with at least one invoice in the period. Period 2025-01-01 to 2025-12-31, by month. Filters: none. Data as of 2026-08-31. Caveat: Internal test accounts are excluded.",
+   "models_used": [
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b"
+   ]
+  },
+  {
+   "id": "vague_period_default",
+   "role": "eu_manager",
+   "question": "How has revenue been doing recently?",
+   "behavior": "answer",
+   "seconds": 66.5,
+   "plan_ok": true,
+   "numbers_ok": true,
+   "verifier_first_try": false,
+   "writer_called": true,
+   "fallback": false,
+   "mentions_ok": true,
+   "leak": false,
+   "problems": [],
+   "attempts": [
+    {
+     "draft": {
+      "answer": "Revenue rose slightly, from $41,715 in July 2026 to $42,060 in August 2026, an increase of {{r1.change_pct_abs}}.",
+      "used_results": [
+       "r1"
+      ]
+     },
+     "problems": [
+      "the text contains a typed number; every number must be a placeholder"
+     ],
+     "models_used": [
+      "groq:qwen/qwen3.8-27b"
+     ]
+    },
+    {
+     "draft": {
+      "answer": "Revenue rose slightly, from {{r1.first}} in July 2026 to {{r1.last}} in August 2026, an increase of {{r1.change_pct_abs}}.",
+      "used_results": [
+       "r1"
+      ]
+     },
+     "problems": [],
+     "models_used": [
+      "groq:qwen/qwen3.8-27b"
+     ]
+    }
+   ],
+   "text": "**Answer:** Revenue rose slightly, from $41,715 in July 2026 to $42,060 in August 2026, an increase of 0.83%.\n\n**Assumptions:**\n- 'recently' is vague, so I compared the last full month (August 2026) with the month before it (July 2026).\n- No breakdown requested, so revenue is shown as a total per month.\n\n**What drove it:** The change (+0.83%) is within normal month-to-month variation (notable means above 10.06%), so no group is named as a driver.\n\n**How this was computed:**\n- r1: **revenue** (Finance): Total invoiced amount. Invoices are issued at month end for every customer active that day. Period 2026-07-01 to 2026-08-31, by month. Filters: region = EU (your access). Data as of 2026-08-31. Caveat: Internal test accounts are excluded. No refunds or discounts are recorded.",
+   "models_used": [
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b"
+   ]
+  },
+  {
+   "id": "undefined_term",
+   "role": "ceo",
+   "question": "What is our customer engagement score for July 2026?",
+   "behavior": "not_defined",
+   "seconds": 1.5,
+   "plan_ok": true,
+   "numbers_ok": null,
+   "verifier_first_try": false,
+   "writer_called": false,
+   "fallback": false,
+   "mentions_ok": true,
+   "leak": false,
+   "problems": [],
+   "attempts": [],
+   "text": "'customer engagement score' is not a defined company metric, so I won't guess a definition. Related metrics: active_users, reports_created, churn_rate.",
+   "models_used": [
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b"
+   ]
+  },
+  {
+   "id": "forbidden_metric",
+   "role": "product_manager",
+   "question": "What was revenue in March 2026?",
+   "behavior": "refuse",
+   "seconds": 1.5,
+   "plan_ok": true,
+   "numbers_ok": null,
+   "verifier_first_try": false,
+   "writer_called": false,
+   "fallback": false,
+   "mentions_ok": true,
+   "leak": false,
+   "problems": [],
+   "attempts": [],
+   "text": "'revenue' is not available for your role. You can ask about: active_users, reports_created.",
+   "models_used": [
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b"
+   ]
+  },
+  {
+   "id": "forbidden_region",
+   "role": "eu_manager",
+   "question": "What was revenue in NA in 2025?",
+   "behavior": "refuse",
+   "seconds": 63.2,
+   "plan_ok": true,
+   "numbers_ok": null,
+   "verifier_first_try": false,
+   "writer_called": false,
+   "fallback": false,
+   "mentions_ok": true,
+   "leak": false,
+   "problems": [],
+   "attempts": [],
+   "text": "Your role can only see region EU.",
+   "models_used": [
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b",
+    "groq:qwen/qwen3.8-27b"
+   ]
+  }
+ ]
+}

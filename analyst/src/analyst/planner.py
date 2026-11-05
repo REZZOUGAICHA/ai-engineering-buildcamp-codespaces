@@ -14,6 +14,7 @@ Rules are enforced in code, not only in the prompt:
 - tool calls and model requests per question are capped.
 """
 
+import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Literal
@@ -123,12 +124,18 @@ Periods (end is exclusive: March 2026 is start 2026-03-01, end 2026-04-01):
   say so in assumptions.
 - "trend", "over time", "each month", "monthly": grain "month". Otherwise
   grain "total".
+- A period outside the data: still plan it. Code will tell the user there is
+  no data for it. Don't ask the user to clarify a clear period.
 
 Breakdowns and filters:
 - "by region", "per plan", "which segment": put the dimension in dimensions.
 - A specific value ("in the EU", "SMB customers", "pro plan"): a filter on
   that dimension with the exact value spelling from describe_metric.
 - Only use dimensions listed for the metric.
+- Never drop or change a filter the user asked for, even if its value is not
+  listed for you. Put the user's value in the filter; code decides access.
+- A "why" question gets no breakdowns unless the user names one: finding
+  which groups drove a change is done by code, not by the plan.
 
 Write every assumption you made (default period, chosen metric for a synonym)
 in assumptions, in plain words.
@@ -188,6 +195,9 @@ def check_decision(ctx: RunContext[PlannerDeps], dec: PlannerDecision) -> Planne
         if not dec.plans:
             raise ModelRetry("behavior 'answer' needs at least one plan.")
         for p in dec.plans:
+            if p.start.day != 1 or p.end.day != 1:
+                raise ModelRetry(f"start and end must be the first day of a month (end is "
+                                 f"exclusive: March 2026 ends 2026-04-01). Got {p.start} to {p.end}.")
             if p.metric not in layer.metrics:
                 raise ModelRetry(f"Unknown metric {p.metric!r}. Use a name from list_metrics, "
                                  "or behavior 'not_defined'.")
@@ -207,9 +217,18 @@ def check_decision(ctx: RunContext[PlannerDeps], dec: PlannerDecision) -> Planne
         known = layer.find(dec.unknown_term)
         if known in d.metrics:
             raise ModelRetry(f"{dec.unknown_term!r} is a defined metric: {known}. Plan it.")
-    elif dec.behavior == "clarify" and not dec.question_for_user:
-        raise ModelRetry("behavior 'clarify' needs question_for_user.")
+    elif dec.behavior == "clarify" and not (dec.question_for_user or "").strip().endswith("?"):
+        raise ModelRetry("behavior 'clarify' needs question_for_user: one question ending with '?'.")
     return dec
+
+
+def canonical(plan):
+    """One standard form for plans that mean the same thing: a single month with
+    grain "month" is the same question as that month with grain "total"."""
+    one_month = (plan.end.year * 12 + plan.end.month) - (plan.start.year * 12 + plan.start.month) == 1
+    if plan.grain == "month" and one_month:
+        return plan.model_copy(update={"grain": "total"})
+    return plan
 
 
 def finalize(dec, deps):
@@ -222,7 +241,7 @@ def finalize(dec, deps):
                 access.authorize(p, role, deps.policy, layer)
         except PolicyError as e:
             return PlannerResult(behavior="refuse", message=str(e), **common)
-        return PlannerResult(behavior="answer", plans=dec.plans, **common)
+        return PlannerResult(behavior="answer", plans=[canonical(p) for p in dec.plans], **common)
     if dec.behavior == "not_defined":
         known = layer.find(dec.unknown_term)
         if known:  # it exists, so the role must not have it (the validator caught the rest)
@@ -258,12 +277,29 @@ def models_used(messages):
             if isinstance(m, ModelResponse) and m.model_name]
 
 
+def names_rows_outside_access(question, layer, rules):
+    """The policy message if a row-filtered role names another value of that dimension
+    ("NA" for an EU manager), as a whole word with the config's spelling. Else None.
+    Only exact codes: "North America" is left to the model and the policy check."""
+    row = rules.row_filter
+    if not row:
+        return None
+    for v in layer.dimensions[row.dimension].values:
+        if v not in row.values and re.search(rf"(?<![A-Za-z]){re.escape(v)}(?![A-Za-z])",
+                                             question):
+            return f"Your role can only see {row.dimension} {', '.join(row.values)}."
+    return None
+
+
 def plan_question(question, role, layer, policy, data_from, data_as_of, model=None):
     """Plan one question for one role. Never raises for model trouble: returns 'failed'."""
     try:
         access.role_rules(policy, role)
     except PolicyError as e:  # unknown role: refuse before spending any tokens
         return PlannerResult(behavior="refuse", message=str(e))
+    outside = names_rows_outside_access(question, layer, access.role_rules(policy, role))
+    if outside:  # measured: the model sometimes dropped "NA" and planned all of its rows
+        return PlannerResult(behavior="refuse", message=outside)
     deps = PlannerDeps(layer, policy, role, data_from, data_as_of)
     try:
         run = agent.run_sync(question, deps=deps, model=model or default_model(),

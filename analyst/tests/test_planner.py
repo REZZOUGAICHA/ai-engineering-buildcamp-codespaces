@@ -164,3 +164,56 @@ def test_model_that_never_gives_a_valid_plan_fails_safely(layer, policy):
     s = Script(answer({"metric": "income", **MARCH}))
     result = plan_with(s, "ceo", layer, policy)
     assert result.behavior == "failed" and not result.plans
+
+
+def test_period_not_on_a_month_start_is_sent_back(layer, policy):
+    s = Script(answer({"metric": "revenue", "start": "2026-02-01", "end": "2026-03-31", "grain": "month"}),
+               answer({"metric": "revenue", "start": "2026-02-01", "end": "2026-04-01", "grain": "month"}))
+    result = plan_with(s, "ceo", layer, policy)
+    assert "first day of a month" in s.retry_messages[0]
+    assert str(result.plans[0].end) == "2026-04-01"
+
+
+def test_one_month_with_grain_month_becomes_total(layer, policy):
+    s = Script(answer({"metric": "revenue", "grain": "month", **MARCH}))
+    assert plan_with(s, "ceo", layer, policy).plans[0].grain == "total"
+    s = Script(answer({"metric": "revenue", "start": "2026-02-01", "end": "2026-04-01", "grain": "month"}))
+    assert plan_with(s, "ceo", layer, policy).plans[0].grain == "month"  # two months stay monthly
+
+
+def test_clarify_needs_a_real_question(layer, policy):
+    s = Script(final(behavior="clarify", question_for_user="March 2024"),
+               final(behavior="clarify", question_for_user="Which metric do you mean?"))
+    result = plan_with(s, "ceo", layer, policy)
+    assert s.retry_messages and result.message == "Which metric do you mean?"
+
+
+# --- a row-filtered role naming rows outside its access --------------------------------
+
+@pytest.mark.parametrize("question", ["What was revenue in NA in 2025?", "revenue for APAC?",
+                                      "Compare EU and LATAM revenue"])
+def test_eu_manager_naming_another_region_is_refused_before_any_model_call(layer, policy, question):
+    # measured in round 2: the model once dropped the "NA" filter and planned EU rows
+    s = Script(answer({"metric": "revenue", **MARCH}))
+    result = plan_with(s, "eu_manager", layer, policy, question=question)
+    assert result.behavior == "refuse" and s.calls == 0
+    assert result.message == "Your role can only see region EU."
+
+
+@pytest.mark.parametrize("role, question", [
+    ("eu_manager", "What was revenue in the EU in March 2026?"),
+    ("eu_manager", "financial summary: revenue in March, banana"),   # "na" inside words
+    ("eu_manager", "revenue in na"),                                   # not the code's spelling
+    ("ceo", "What was revenue in NA in 2025?"),                        # no row filter
+])
+def test_the_guard_does_not_fire_without_a_reason(layer, policy, role, question):
+    s = Script(answer({"metric": "revenue", **MARCH}))
+    assert plan_with(s, role, layer, policy, question=question).behavior == "answer"
+
+
+def test_the_guard_only_knows_exact_codes(layer, policy):
+    # documented limit: "North America" goes to the model; the policy check is the backstop
+    s = Script(answer({"metric": "revenue", "filters": [{"dimension": "region", "values": ["NA"]}],
+                       **MARCH}))
+    result = plan_with(s, "eu_manager", layer, policy, question="revenue in North America?")
+    assert s.calls == 1 and result.behavior == "refuse"

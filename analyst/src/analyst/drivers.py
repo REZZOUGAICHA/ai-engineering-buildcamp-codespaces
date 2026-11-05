@@ -22,6 +22,7 @@ import yaml
 from pydantic import BaseModel
 
 from analyst import policy as access
+from analyst.facts import fmt_amount
 from analyst.plan import Filter, QueryPlan
 from analyst.semantic import CONFIG_DIR
 
@@ -66,6 +67,60 @@ class DriverReport(BaseModel):
     annotations: list[dict]
     result_ids: list[str]
     notes: list[str]
+
+
+def is_change_plan(plans):
+    """A change question's plan: one metric, by month, exactly two months in a row, no breakdown."""
+    return (len(plans) == 1 and plans[0].grain == "month" and not plans[0].dimensions
+            and add_months(plans[0].start, 2) == plans[0].end)
+
+
+def signed(v, unit):
+    return ("+" if v > 0 else "-" if v < 0 else "") + fmt_amount(abs(v), unit)
+
+
+def part(v, unit):
+    """A mix or rate part, in the metric's unit (a percent metric's change is in points)."""
+    if unit == "percent":
+        return f"{'+' if v > 0 else '-' if v < 0 else ''}{abs(v) * 100:.2f} points"
+    return signed(v, unit)
+
+
+def summary(rep, unit):
+    """The 'What drove it' section, written by code from the report. Never names a cause."""
+    if rep.change_pct is None:
+        return None
+    pct_text = f"{'+' if rep.change_pct > 0 else '-' if rep.change_pct < 0 else ''}" \
+               f"{abs(rep.change_pct) * 100:.2f}%"
+    if rep.notable is None:
+        return ("**What drove it:** There is not enough history to tell whether this change "
+                "is unusual, so no group is named as a driver.")
+    if not rep.notable:
+        return (f"**What drove it:** The change ({pct_text}) is within normal month-to-month "
+                f"variation (notable means above {rep.threshold_pct * 100:.2f}%), so no group "
+                "is named as a driver.")
+    lines = [f"**What drove it:** The change ({pct_text}) is notable: "
+             f"{rep.times_threshold:.1f} times the normal month-to-month variation."]
+    for dd in rep.dimensions:
+        if dd.mix is not None:  # ratio metric
+            main = "a shift in the mix of groups" if abs(dd.mix) > abs(dd.rate) \
+                else "the rate changing inside groups"
+            lines.append(f"- By {dd.dimension}: most of the change comes from {main} "
+                         f"(mix {part(dd.mix, unit)}, rate {part(dd.rate, unit)}).")
+        elif dd.concentrated:
+            top = dd.contributions[0]
+            lines.append(f"- By {dd.dimension}: the change is concentrated in {top.group} "
+                         f"({signed(top.delta, unit)} of the total {signed(rep.change, unit)}).")
+        elif dd.top_group is not None:
+            lines.append(f"- By {dd.dimension}: no single group explains it (largest part: "
+                         f"{dd.top_group}, {dd.top_share * 100:.0f}% of the change).")
+    if any(dd.concentrated for dd in rep.dimensions):
+        lines.append("- Note: a big group gets a big part of any change, so this shows where "
+                     "the change is, not what is unusual.")
+    if rep.annotations:
+        lines.append("- This coincides with (from the company's event log): "
+                     + "; ".join(f"{a['date']}: {a['title']}" for a in rep.annotations) + ".")
+    return "\n".join(lines)
 
 
 def add_months(d, n):

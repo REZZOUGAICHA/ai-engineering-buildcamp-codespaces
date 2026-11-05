@@ -4,10 +4,10 @@ Managers ask business questions in plain language ("why did revenue drop in
 March?") and get a correct answer that follows the company's metric
 definitions and access rules.
 
-**Status (2026-11-04):** phases 0 to 5 are built and tested offline; the
-planner is partly measured with the real model; the end-to-end eval is written
-but not run yet (free-tier daily token limit). Driver analysis (phase 6) is
-built and tested as code but not yet connected to the answers. There is a
+**Status (2026-11-04):** phases 0 to 5 are built, tested offline and measured
+once end to end with the real model (results below). Driver analysis (phase 6) is
+connected: a change question ("why did X drop in March?") gets a "What drove it"
+section written by code. That part is tested offline only, not yet in a real-model eval. There is a
 command-line interface, no web UI yet. Everything below says which parts exist.
 
 ## What makes it different from a text-to-SQL agent
@@ -16,7 +16,7 @@ command-line interface, no web UI yet. Everything below says which parts exist.
 |---|---|---|
 | **Metric definitions** | The model invents a formula each time | Defined once in `config/metrics.yaml`; the model only picks a metric by name, and code builds the SQL. **Built.** |
 | **Access control** | Rules in the prompt, which can be talked around | Enforced in code: no SQL can be built without passing the policy check. **Built.** |
-| **The "why" behind a change** | The model guesses | Computed by code (driver analysis, mix/rate split); the model only words it. **Computed and tested; not yet in the answers.** |
+| **The "why" behind a change** | The model guesses | Computed by code (driver analysis, mix/rate split); the "What drove it" text is written by code from the numbers, and the model's own sentence may not claim a cause. **Built; tested offline.** |
 
 The rule behind every design choice: **the language model never produces
 facts.** Numbers, definitions, SQL, permissions and explanations of change all
@@ -47,7 +47,7 @@ question + role
  Writer (LLM) + verifier + renderer: text with placeholders, numbers by code    [built]
       │               2 failed drafts → plain table instead
       ▼
- drivers.py: notable? which group? which company events? (no LLM)                [built, not wired in]
+ drivers.py: notable? which group? which company events? (no LLM)                [built, runs for change questions]
 ```
 
 ## Run it
@@ -88,10 +88,28 @@ and a customer whose name is a prompt-injection attempt.
 | Same check for the EU manager role (row filter) | 32 / 32 cases match |
 | Attack queries blocked by the SQL guard | 31 / 31 |
 | Driver analysis vs. the answer key (PLANTED.md) | All 4 stories found through the safe query path, same numbers; flat month correctly "not notable" |
-| Full test suite (no LLM calls) | 358 passed, 36 skipped (role/metric pairs the policy refuses) |
 | Mutation tests (code broken on purpose) | Removing the row filter fails 33 tests; skipping the small-group check fails 9; 4 / 4 metric-definition bugs caught; every planner rule and verifier check is caught by at least one test |
-| Planner, real model (`groq:qwen/qwen3.8-27b`), 15 golden questions | First run: 14 / 15 correct plans. After fixing a prompt contradiction: 20 / 21 correct on 7 cases × 3 runs (the run stopped at the daily token limit). One case was unstable at temperature 0 (dropped a filter in 1 of 3 runs). |
-| End-to-end answers, numeric accuracy, leakage rate | **Not measured yet** (eval written: 22 cases, numbers checked against pandas) |
+| "What drove it" in the full answer (scripted models) | Stories 1, 2, 4 named with their events; the flat month says "within normal variation" and leaves out the event in its window; the writer can't cite driver numbers |
+| Full test suite (no LLM calls) | 371 passed, 36 skipped |
+
+**Real-model evals** (2026-11-04, round 1; files in `evals/results/*_run1.json`).
+Models: Qwen 3.8 27B on Groq, with Z.ai GLM-4.7-flash as backup; Qwen made
+about 90% of the calls (the rest are labelled per case in the result files).
+
+| What | Result |
+|---|---|
+| Planner: 15 questions × 3 runs | 41 / 45 plans correct; 11 / 15 questions gave the same plan in all 3 runs; refusals and "not defined" 18 / 18 |
+| End to end: 22 questions | 18 / 22 correct behavior and plan |
+| Numbers vs. pandas (answered questions) | 10 / 13 (all 3 misses came from a wrong plan, not wrong maths) |
+| Writer draft passes the verifier first time | 9 / 13 (all 13 passed after one retry; 0 fallbacks) |
+| **Data leakage** (emails, customer names, hidden columns in answers) | **0 / 22** |
+
+After round 1, four fixes were made (dates must start a month, one-month plans
+are normalised, out-of-range periods say "no data", clarify questions are
+checked). Round 2 stopped after 6 questions: every provider hit its daily
+limit. In those 6, one question ("last month") was still read as July in 1 of
+3 runs. These 22 questions were also used to find bugs, so the scores are
+optimistic.
 
 ## Project layout
 
@@ -132,4 +150,11 @@ tests/                     unit tests (fake LLM) and the pandas ground truth
   (200,000 tokens per day), which limits how often the evals can run.
 - **The verifier reads words, not meaning.** It catches typed numbers, wrong
   direction words and cause words, but a paraphrased cause could pass.
+- **"Concentrated in" reflects size as well as change.** A big group gets a big part
+  of any change. Example: story 1 (planted in EU SMB churn) also reports "concentrated
+  in pro", because pro customers pay the most. The answer says this in a note. A
+  comparison with each group's own size would be better. Not built yet.
+- **Each breakdown is split on its own.** Story 4's churn rise is "mix" by segment
+  but "rate" by region, because inside every region the share of SMB grew. Both
+  are true; reading only one breakdown can mislead.
 - **Enterprise customers never churn in this data** (a side effect of rounding small groups; documented in PLANTED.md).

@@ -150,7 +150,8 @@ def test_pipeline_falls_back_to_a_table(ex):
                      writer_model=scripted({"answer": BAD["typed percent"], "used_results": ["r1"]}))
     assert a.fallback and len(a.attempts) == 2
     assert pipeline.FALLBACK in a.text and "| period | value |" in a.text
-    assert "2.96%" not in a.text  # the wrong draft is never shown
+    # the rejected draft is never shown (code may still print -2.96% in "What drove it")
+    assert BAD["typed percent"] not in a.text and "Revenue fell 2.96%" not in a.text
 
 
 def test_pipeline_empty_period_needs_no_writer(ex):
@@ -212,3 +213,90 @@ def test_unsafe_assumptions_are_not_shown(ex):
                      writer_model=scripted({"answer": GOOD, "used_results": ["r1"]}))
     assert "Compared 2026-02-01 with 2026-03-01." in a.text
     assert "84,620 in March" not in a.text and "Ignore all previous" not in a.text
+
+
+# --- the "why" (drivers.py) inside the full answer --------------------------------------
+
+from analyst.verifier import CAUSAL  # noqa: E402
+
+CHANGED = {"answer": "It changed by {{r1.change_pct}}.", "used_results": ["r1"]}
+
+
+def change_plan(metric, start, end, **extra):
+    return {"behavior": "answer", "plans": [{"metric": metric, "start": start, "end": end,
+                                             "grain": "month", **extra}]}
+
+
+def why(text):
+    return text.split("**What drove it:**")[1].split("**How this was computed")[0]
+
+
+def test_story1_answer_names_eu_and_the_price_event_without_a_cause(ex):
+    a = pipeline.ask("why did revenue drop in March 2026?", "ceo", ex,
+                     planner_model=scripted(change_plan("revenue", "2026-02-01", "2026-04-01")),
+                     writer_model=scripted(CHANGED))
+    w = why(a.text)
+    assert "notable" in w and "concentrated in EU" in w and "concentrated in SMB" in w
+    assert "2026-03-03: EU Basic plan price increase announced" in w and "coincides" in w
+    assert not CAUSAL.search(w)
+    assert a.result_ids == ["r1"] and set(a.drivers.result_ids) <= set(a.results)
+
+
+def test_flat_month_names_no_driver_and_no_event(ex):
+    # 2025-11-12 has a company event in the window; on a flat month it must not be shown
+    a = pipeline.ask("why did revenue change in November 2025?", "ceo", ex,
+                     planner_model=scripted(change_plan("revenue", "2025-10-01", "2025-12-01")),
+                     writer_model=scripted(CHANGED))
+    w = why(a.text)
+    assert "within normal month-to-month variation" in w
+    assert "concentrated" not in w and "coincides" not in w and "migration" not in a.text
+
+
+def test_ratio_metric_reports_mix_and_rate(ex):
+    a = pipeline.ask("why did churn rate rise in July 2026?", "ceo", ex,
+                     planner_model=scripted(change_plan("churn_rate", "2026-06-01", "2026-08-01")),
+                     writer_model=scripted(CHANGED))
+    assert "most of the change comes from a shift in the mix of groups" in why(a.text)
+    assert "points" in why(a.text)  # churn_rate is a percent: its parts are in points
+
+
+def test_eu_manager_why_has_no_region_breakdown(ex):
+    a = pipeline.ask("why did revenue drop in March 2026?", "eu_manager", ex,
+                     planner_model=scripted(change_plan("revenue", "2026-02-01", "2026-04-01")),
+                     writer_model=scripted(CHANGED))
+    assert "By region" not in a.text and "By segment" in a.text
+
+
+def test_no_why_section_for_a_plain_question(ex):
+    plan = {"behavior": "answer", "plans": [{"metric": "revenue", "start": "2026-03-01",
+                                             "end": "2026-04-01"}]}
+    a = pipeline.ask("revenue in March 2026?", "ceo", ex, planner_model=scripted(plan),
+                     writer_model=scripted({"answer": "Revenue was {{r1.value}}.",
+                                            "used_results": ["r1"]}))
+    assert "What drove it" not in a.text and a.drivers is None
+
+
+def test_writer_cannot_cite_driver_results(ex):
+    # the driver queries are r2, r3...; the writer only gets r1, so citing r2 is rejected
+    bad = {"answer": "It changed by {{r2.change_pct}}.", "used_results": ["r2"]}
+    a = pipeline.ask("q", "ceo", ex,
+                     planner_model=scripted(change_plan("revenue", "2026-02-01", "2026-04-01")),
+                     writer_model=scripted(bad))
+    assert "r2" in a.results and a.fallback
+    assert any("no result r2" in p for p in a.attempts[0]["problems"])
+
+
+def test_fallback_still_shows_the_why(ex):
+    a = pipeline.ask("q", "ceo", ex,
+                     planner_model=scripted(change_plan("revenue", "2026-02-01", "2026-04-01")),
+                     writer_model=scripted({"answer": BAD["typed percent"], "used_results": ["r1"]}))
+    assert a.fallback and "concentrated in EU" in why(a.text)
+
+
+def test_usd_ratio_parts_are_in_dollars_not_points(ex):
+    # arpu is a ratio in USD: a mix of 5.2 must read "$5.20", never "520.00 points"
+    from analyst import drivers
+    rep = drivers.explain_change(ResultStore(ex, "ceo"), "arpu", date(2026, 3, 1))
+    rep.notable = True
+    text = drivers.summary(rep, "USD")
+    assert "points" not in text and "$" in text
