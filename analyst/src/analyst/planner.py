@@ -27,7 +27,7 @@ from pydantic_ai.messages import ModelResponse
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
-from analyst import models
+from analyst import models, trace
 from analyst import policy as access
 from analyst.plan import QueryPlan
 from analyst.policy import PolicyError
@@ -62,6 +62,7 @@ class PlannerResult(BaseModel):
     suggested_metrics: list[str] = []
     tool_calls: list[str] = []
     models_used: list[str] = []   # which model answered (the fallback may switch)
+    usage: list[dict] = []        # tokens per model response, for cost tracking
 
 
 @dataclass
@@ -316,4 +317,5 @@ def plan_question(question, role, layer, policy, data_from, data_as_of, model=No
                                      f"({type(e).__name__}). Please try again later.")
     result = finalize(run.output, deps)
     result.models_used = models_used(run.all_messages())
+    result.usage = trace.usage_of(run.all_messages())
     return result

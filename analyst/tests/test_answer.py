@@ -300,3 +300,20 @@ def test_usd_ratio_parts_are_in_dollars_not_points(ex):
     rep.notable = True
     text = drivers.summary(rep, "USD")
     assert "points" not in text and "$" in text
+
+
+# --- monitoring: the spans exist and carry no hidden data ---------------------------------
+
+def test_one_question_is_one_span_tree_with_usage(ex, capfire):
+    a = pipeline.ask("why did revenue drop in March 2026?", "ceo", ex,
+                     planner_model=scripted(PLAN_FEB_MAR),
+                     writer_model=scripted({"answer": GOOD, "used_results": ["r1"]}))
+    spans = {s["name"]: s for s in capfire.exporter.exported_spans_as_dict()}
+    assert {"answer_question", "plan", "execute", "drivers", "write"} <= set(spans)
+    root = spans["answer_question"]["attributes"]
+    assert root["answer_id"] == a.answer_id and root["behavior"] == "answer"
+    assert root["input_tokens"] > 0 and root["input_tokens"] == sum(u["input_tokens"] for u in a.usage)
+    # traces leave the machine, so they follow the leak rule like any output
+    dump = str(capfire.exporter.exported_spans_as_dict()).lower()
+    # (not the bare word "email": the planner's prompt and a user's question may say it)
+    assert "canary-" not in dump and "users.email" not in dump

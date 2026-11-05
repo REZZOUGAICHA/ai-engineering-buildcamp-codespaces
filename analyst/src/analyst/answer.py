@@ -8,15 +8,17 @@ wrong paragraph.
 """
 
 import json
+import uuid
 from datetime import timedelta
 
-from pydantic import BaseModel, ConfigDict
+import logfire
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import (FallbackExceptionGroup, ModelAPIError, UnexpectedModelBehavior,
                                     UsageLimitExceeded)
 from pydantic_ai.usage import UsageLimits
 
-from analyst import drivers, planner, verifier
+from analyst import drivers, planner, trace, verifier
 from analyst import policy as access
 from analyst.drivers import DriverReport
 from analyst.executor import ResultSet, ResultStore
@@ -40,6 +42,9 @@ class Answer(BaseModel):
     attempts: list[dict] = []     # each writer draft and the verifier's problems
     fallback: bool = False
     drivers: DriverReport | None = None  # the "why", for change questions
+    usage: list[dict] = []        # tokens per model response (planner + writer)
+    # Links user feedback to this one answer, not just to the session.
+    answer_id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
 
 
 WRITER_INSTRUCTIONS = """
@@ -137,7 +142,8 @@ def draft_answer(question, plan_result, results, table, layer, role, hidden_term
         draft = run.output
         problems = verifier.verify(draft, table, results, role, hidden_terms)
         attempts.append({"draft": draft.model_dump(), "problems": problems,
-                         "models_used": planner.models_used(run.all_messages())})
+                         "models_used": planner.models_used(run.all_messages()),
+                         "usage": trace.usage_of(run.all_messages())})
         if not problems:
             return draft, attempts
         prompt += ("\n\nYour previous draft was rejected:\n" + json.dumps(draft.model_dump())
@@ -146,10 +152,27 @@ def draft_answer(question, plan_result, results, table, layer, role, hidden_term
 
 
 def ask(question, role, executor, planner_model=None, writer_model=None):
-    """Answer one question for one role. Every path returns an Answer; nothing raises."""
+    """Answer one question for one role. Every path returns an Answer; nothing raises.
+    Everything happens inside one `answer_question` span (a no-op without Logfire)."""
+    with logfire.span("answer_question", question=question, role=role) as span:
+        a = _answer(question, role, executor, planner_model, writer_model)
+        a.usage = a.plan.usage + [u for at in a.attempts for u in at.get("usage", [])]
+        span.set_attributes({
+            "answer_id": a.answer_id, "behavior": a.behavior,
+            "tool_calls": a.plan.tool_calls, "models_used": a.plan.models_used,
+            "plans": [p.model_dump(mode="json") for p in a.plan.plans],
+            "result_ids": a.result_ids, "fallback": a.fallback,
+            "writer_attempts": len(a.attempts),
+            "verifier_problems": [p for at in a.attempts for p in at["problems"]],
+            **trace.totals(a.usage)})
+        return a
+
+
+def _answer(question, role, executor, planner_model, writer_model):
     layer, policy = executor.layer, executor.policy
-    plan_result = planner.plan_question(question, role, layer, policy, executor.data_from,
-                                        executor.data_as_of, model=planner_model)
+    with logfire.span("plan"):
+        plan_result = planner.plan_question(question, role, layer, policy, executor.data_from,
+                                            executor.data_as_of, model=planner_model)
     if plan_result.behavior == "clarify" and not verifier.plain_text_ok(
             plan_result.message or "", executor.hidden_terms()):
         plan_result.message = "Could you say which metric and which period you mean?"
@@ -158,7 +181,10 @@ def ask(question, role, executor, planner_model=None, writer_model=None):
 
     store = ResultStore(executor, role)
     for p in plan_result.plans:
-        store.query(p)
+        # policy check + compile + SQL guard + run, all inside store.query
+        with logfire.span("execute", metric=p.metric) as s:
+            r = store.query(p)
+            s.set_attributes({"result_id": r.result_id, "sql": r.sql, "rows": len(r.rows)})
     results = dict(store.results)  # the plan's results: the only ones the writer may cite
     table = all_facts(results, layer)
     note = how_computed(results, layer, policy, role)
@@ -173,13 +199,20 @@ def ask(question, role, executor, planner_model=None, writer_model=None):
     report, why = None, ""
     if drivers.is_change_plan(plan_result.plans):
         p = plan_result.plans[0]
-        report = drivers.explain_change(store, p.metric, drivers.add_months(p.start, 1), p.filters)
+        with logfire.span("drivers", metric=p.metric) as s:
+            report = drivers.explain_change(store, p.metric, drivers.add_months(p.start, 1),
+                                            p.filters)
+            s.set_attributes({"notable": str(report.notable),
+                              "top_groups": {d.dimension: d.top_group for d in report.dimensions}})
         text = drivers.summary(report, layer.metrics[p.metric].unit)
         why = f"{text}\n\n" if text else ""
     base["drivers"] = report
 
-    draft, attempts = draft_answer(question, plan_result, results, table, layer, role,
-                                   executor.hidden_terms(), writer_model or planner.default_model())
+    with logfire.span("write") as s:  # writer LLM + verifier, with one retry
+        draft, attempts = draft_answer(question, plan_result, results, table, layer, role,
+                                       executor.hidden_terms(),
+                                       writer_model or planner.default_model())
+        s.set_attributes({"attempts": len(attempts), "verified": draft is not None})
     if draft is None:
         return Answer(behavior="answer", fallback=True, attempts=attempts, **base,
                       text=f"**Answer:** {FALLBACK}\n\n{results_table(results, layer)}\n\n"

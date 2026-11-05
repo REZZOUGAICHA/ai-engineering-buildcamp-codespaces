@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
     "duckdb>=2.0.0",
+    "logfire>=5.4.0",
     "pandas>=3.0.6",
     "pydantic>=2.14.2",
     "pydantic-ai-slim[groq,openai]>=2.59.0",
@@ -32,3 +33,7 @@ testpaths = ["tests"]
 # Skipped by default; run them with: uv run pytest -m llm
 markers = ["llm: calls the real LLM"]
 addopts = "-m 'not llm'"
+
+[tool.logfire]
+# Tests and evals never call trace.setup(); spans are then silent no-ops.
+ignore_no_config = true

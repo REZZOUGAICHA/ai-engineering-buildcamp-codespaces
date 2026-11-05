@@ -1,0 +1,9 @@
+# Price per 1 million tokens, in US dollars, keyed by "provider:model" as
+# pydantic-ai reports it. Used only for cost tracking, never for answers.
+# Checked 2026-11-05. Prices change: recheck the provider pages before quoting a cost.
+groq:qwen/qwen3.8-27b:
+  input: 0.80    # Groq list price (console.groq.com/docs/models)
+  output: 4.00
+zai:glm-4.7-flash:
+  input: 0.06    # sources disagree ($0 free tier vs $0.06/$0.40); the higher is used
+  output: 0.40
